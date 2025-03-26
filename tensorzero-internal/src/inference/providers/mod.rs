@@ -20,3 +20,4 @@ pub mod tgi;
 pub mod together;
 pub mod vllm;
 pub mod xai;
+pub mod ollama;
