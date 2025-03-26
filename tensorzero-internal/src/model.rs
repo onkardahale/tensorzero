@@ -25,6 +25,8 @@ use crate::inference::providers::helpers::peek_first_chunk;
 use crate::inference::providers::hyperbolic::HyperbolicProvider;
 use crate::inference::providers::sglang::SGLangProvider;
 use crate::inference::providers::tgi::TGIProvider;
+use crate::inference::providers::ollama::OllamaProvider;
+
 use crate::inference::types::batch::{
     BatchRequestRow, PollBatchInferenceResponse, StartBatchModelInferenceResponse,
     StartBatchProviderInferenceResponse,
@@ -50,6 +52,7 @@ use crate::{
         types::{ModelInferenceRequest, ModelInferenceResponse, ProviderInferenceResponse},
     },
 };
+
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -504,6 +507,7 @@ pub enum ProviderConfig {
     TGI(TGIProvider),
     SGLang(SGLangProvider),
     DeepSeek(DeepSeekProvider),
+    Ollama(OllamaProvider),
     #[cfg(any(test, feature = "e2e_tests"))]
     Dummy(DummyProvider),
 }
@@ -607,6 +611,12 @@ pub(super) enum ProviderConfigHelper {
     #[allow(clippy::upper_case_acronyms)]
     DeepSeek {
         model_name: String,
+        api_key_location: Option<CredentialLocation>,
+    },
+    #[allow(clippy::upper_case_acronyms)]
+    Ollama {
+        model_name: String,
+        api_base: Option<Url>,
         api_key_location: Option<CredentialLocation>,
     },
     #[cfg(any(test, feature = "e2e_tests"))]
@@ -761,6 +771,14 @@ impl<'de> Deserialize<'de> for ProviderConfig {
                 DeepSeekProvider::new(model_name, api_key_location)
                     .map_err(|e| D::Error::custom(e.to_string()))?,
             ),
+            ProviderConfigHelper::Ollama {
+                model_name,
+                api_base,
+                api_key_location,
+            } => ProviderConfig::Ollama(
+                OllamaProvider::new(model_name, api_base, api_key_location)
+                    .map_err(|e| D::Error::custom(e.to_string()))?,
+            ),
             #[cfg(any(test, feature = "e2e_tests"))]
             ProviderConfigHelper::Dummy {
                 model_name,
@@ -823,6 +841,7 @@ impl ModelProvider {
             ProviderConfig::DeepSeek(provider) => {
                 provider.infer(request, client, api_keys, self).await
             }
+            ProviderConfig::Ollama(provider) => provider.infer(request, client, api_keys, self).await,
             #[cfg(any(test, feature = "e2e_tests"))]
             ProviderConfig::Dummy(provider) => {
                 provider.infer(request, client, api_keys, self).await
@@ -883,6 +902,9 @@ impl ModelProvider {
                 provider.infer_stream(request, client, api_keys, self).await
             }
             ProviderConfig::DeepSeek(provider) => {
+                provider.infer_stream(request, client, api_keys, self).await
+            }
+            ProviderConfig::Ollama(provider) => {
                 provider.infer_stream(request, client, api_keys, self).await
             }
             #[cfg(any(test, feature = "e2e_tests"))]
@@ -979,6 +1001,11 @@ impl ModelProvider {
                     .start_batch_inference(requests, client, api_keys)
                     .await
             }
+            ProviderConfig::Ollama(provider) => {
+                provider
+                .start_batch_inference(requests, client, api_keys)
+                .await
+            }
             #[cfg(any(test, feature = "e2e_tests"))]
             ProviderConfig::Dummy(provider) => {
                 provider
@@ -1074,6 +1101,11 @@ impl ModelProvider {
                 provider
                     .poll_batch_inference(batch_request, http_client, dynamic_api_keys)
                     .await
+            }
+            ProviderConfig::Ollama(provider) => {
+                provider
+                .poll_batch_inference(batch_request, http_client, dynamic_api_keys)
+                .await
             }
             #[cfg(any(test, feature = "e2e_tests"))]
             ProviderConfig::Dummy(provider) => {
@@ -1304,6 +1336,7 @@ const SHORTHAND_MODEL_PREFIXES: &[&str] = &[
     "openai::",
     "together::",
     "xai::",
+    "ollama::",
     "dummy::",
 ];
 
@@ -1330,6 +1363,7 @@ impl ShorthandModelConfig for ModelConfig {
                 crate::inference::providers::together::default_parse_think_blocks(),
             )?),
             "xai" => ProviderConfig::XAI(XAIProvider::new(model_name, None)?),
+            "ollama" => ProviderConfig::Ollama(OllamaProvider::new(model_name, None, None)?),
             #[cfg(any(test, feature = "e2e_tests"))]
             "dummy" => ProviderConfig::Dummy(DummyProvider::new(model_name, None)?),
             _ => {

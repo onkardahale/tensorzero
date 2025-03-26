@@ -5,7 +5,6 @@ use lazy_static::lazy_static;
 use reqwest_eventsource::{Event, EventSource, RequestBuilderExt};
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use tokio::time::Instant;
 use url::Url;
 
@@ -483,7 +482,9 @@ impl<'a> TryFrom<OllamaResponseWithMetadata<'a>> for ProviderInferenceResponse {
             None
         };
 
-        let content = vec![ContentBlockOutput::Text(response.response)];
+        let content = vec![ContentBlockOutput::Text(crate::inference::types::Text {
+            text: response.response
+        })];
         
         let raw_request = serde_json::to_string(&request_body).map_err(|e| {
             Error::new(ErrorDetails::Serialization {
